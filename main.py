@@ -12,9 +12,9 @@ async def whatsapp_webhook(request: Request):
     print("Mensaje recibido:", mensaje)
     print("Número:", numero)
 
-    return PlainTextResponse("Hola 👋 Soy el asistente virtual de la pollera 🐔\n\n"
-        "Puedo ayudarte con:\n"
-        "1️⃣ Precios\n"
-        "2️⃣ Horarios\n"
-        "3️⃣ Pedidos\n\n"
-        "Escribe cualquier cosa para probar.")
+    return PlainTextResponse ("👋 Hola, soy el asistente virtual de *Pollos El Buen Sabor* 🐔\n\n"
+    "Puedo ayudarte con:\n"
+    "1️⃣ Ver precios\n"
+    "2️⃣ Horarios y ubicación\n"
+    "3️⃣ Hacer un pedido\n\n"
+    "Responde con el número de la opción que desees.")
