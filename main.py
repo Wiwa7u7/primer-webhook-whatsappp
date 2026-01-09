@@ -9,16 +9,27 @@ user_state = {}
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     form = await request.form()
-    incoming_msg = form.get("Body" , "").strip()
+    incoming_msg = form.get("Body", "").strip().lower()
     from_number = form.get("From")
 
-     # Estado actual del usuario
+    # Estado actual del usuario
     state = user_state.get(from_number, "menu")
 
-    # MENÚ PRINCIPAL
+    # 🔴 PRIORIDAD MÁXIMA: volver al menú
+    if incoming_msg == "menu":
+        user_state[from_number] = "menu"
+        return PlainTextResponse(
+            "🔙 *Menú principal*\n\n"
+            "1️⃣ Ver precios\n"
+            "2️⃣ Horarios y ubicación\n"
+            "3️⃣ Hacer un pedido\n\n"
+            "Responde con el número de la opción."
+        )
+
+    # 🟢 MENÚ PRINCIPAL
     if state == "menu":
         if incoming_msg == "1":
-            user_state[from_number] = "precios"
+            user_state[from_number] = "menu"
             return PlainTextResponse(
                 "💰 *Precios de nuestros pollos*\n\n"
                 "🐔 Pollo entero: $10\n"
@@ -27,7 +38,7 @@ async def whatsapp_webhook(request: Request):
             )
 
         elif incoming_msg == "2":
-            user_state[from_number] = "horarios"
+            user_state[from_number] = "menu"
             return PlainTextResponse(
                 "📍 *Horarios y ubicación*\n\n"
                 "🕘 Lunes a Domingo: 9am – 8pm\n"
@@ -53,18 +64,9 @@ async def whatsapp_webhook(request: Request):
                 "Responde con el número de la opción."
             )
 
-    # VOLVER AL MENÚ
-    if incoming_msg.lower() == "menu":
-        user_state[from_number] = "menu"
-        return PlainTextResponse(
-            "🔙 *Menú principal*\n\n"
-            "1️⃣ Ver precios\n"
-            "2️⃣ Horarios y ubicación\n"
-            "3️⃣ Hacer un pedido"
-        )
-
-    # PEDIDO SIMPLE
+    # 🟡 ESTADO PEDIDO
     if state == "pedido":
+        user_state[from_number] = "menu"
         return PlainTextResponse(
             f"✅ *Pedido recibido*\n\n"
             f"🧾 Pedido: {incoming_msg}\n\n"
@@ -72,7 +74,8 @@ async def whatsapp_webhook(request: Request):
             "Escribe *menu* para volver."
         )
 
-    # FALLBACK
+    # 🔵 FALLBACK
+    user_state[from_number] = "menu"
     return PlainTextResponse(
         "No entendí tu mensaje 😅\n"
         "Escribe *menu* para volver al inicio."
