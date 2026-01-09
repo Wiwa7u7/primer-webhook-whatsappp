@@ -3,80 +3,108 @@ from fastapi.responses import PlainTextResponse
 
 app = FastAPI()
 
-user_state = {}
+# =========================
+# CONFIGURACIÓN GENERAL
+# =========================
 
+BUSINESS_NAME = "Pollos El Buen Sabor"
+USE_AI = False  # luego lo activamos
+HUMAN_OPERATOR_MSG = (
+    "👨‍💼 Un operador humano te contactará en breve para confirmar tu pedido.\n\n"
+    "Gracias por elegirnos ❤️"
+)
+
+MENU_TEXT = (
+    "👋 *¡Hola! Bienvenido a Pollos El Buen Sabor* 🐔🔥\n\n"
+    "Estoy aquí para ayudarte 😊\n\n"
+    "¿Qué deseas hacer?\n"
+    "1️⃣ Ver precios\n"
+    "2️⃣ Horarios y ubicación\n"
+    "3️⃣ Hacer un pedido\n\n"
+    "Responde con el *número* de la opción."
+)
+
+PRICES_TEXT = (
+    "💰 *Precios de nuestros pollos*\n\n"
+    "🐔 Pollo entero: $10\n"
+    "🍗 Medio pollo: $6\n\n"
+    "Escribe *menu* para volver al inicio."
+)
+
+SCHEDULE_TEXT = (
+    "📍 *Horarios y ubicación*\n\n"
+    "🕒 Lunes a Domingo\n"
+    "⏰ 11:00 AM – 9:00 PM\n\n"
+    "📌 Dirección: Av. Principal, frente a la plaza.\n\n"
+    "Escribe *menu* para volver al inicio."
+)
+
+UNKNOWN_TEXT = (
+    "😅 Disculpa, no entendí tu mensaje.\n\n"
+    "Por favor responde con:\n"
+    "1️⃣ Precios\n"
+    "2️⃣ Horarios\n"
+    "3️⃣ Pedido\n\n"
+    "O escribe *menu* para volver."
+)
+
+# =========================
+# WEBHOOK WHATSAPP
+# =========================
 
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
-    form = await request.form()
-    incoming_msg = form.get("Body", "").strip().lower()
-    from_number = form.get("From")
+    form_data = await request.form()
+    incoming_msg = form_data.get("Body", "")
+    incoming_msg = incoming_msg.strip().lower()
 
-    # Estado actual del usuario
-    state = user_state.get(from_number, "menu")
+    # =========================
+    # MENÚ PRINCIPAL
+    # =========================
+    if incoming_msg in ["hola", "menu", "menú", "inicio"]:
+        return PlainTextResponse(MENU_TEXT)
 
-    # 🔴 PRIORIDAD MÁXIMA: volver al menú
-    if incoming_msg == "menu":
-        user_state[from_number] = "menu"
+    # =========================
+    # OPCIÓN 1 - PRECIOS
+    # =========================
+    if incoming_msg == "1":
+        return PlainTextResponse(PRICES_TEXT)
+
+    # =========================
+    # OPCIÓN 2 - HORARIOS
+    # =========================
+    if incoming_msg == "2":
+        return PlainTextResponse(SCHEDULE_TEXT)
+
+    # =========================
+    # OPCIÓN 3 - PEDIDO
+    # =========================
+    if incoming_msg == "3":
         return PlainTextResponse(
-            "🔙 *Menú principal*\n\n"
-            "1️⃣ Ver precios\n"
-            "2️⃣ Horarios y ubicación\n"
-            "3️⃣ Hacer un pedido\n\n"
-            "Responde con el número de la opción."
+            "📝 *Perfecto, vamos a tomar tu pedido* 🍗🔥\n\n"
+            "Por favor escribe qué deseas ordenar.\n"
+            "Ejemplo:\n"
+            "👉 1 pollo entero y 1 medio pollo"
         )
 
-    # 🟢 MENÚ PRINCIPAL
-    if state == "menu":
-        if incoming_msg == "1":
-            user_state[from_number] = "menu"
-            return PlainTextResponse(
-                "💰 *Precios de nuestros pollos*\n\n"
-                "🐔 Pollo entero: $10\n"
-                "🍗 Medio pollo: $6\n\n"
-                "Escribe *menu* para volver al inicio."
-            )
-
-        elif incoming_msg == "2":
-            user_state[from_number] = "menu"
-            return PlainTextResponse(
-                "📍 *Horarios y ubicación*\n\n"
-                "🕘 Lunes a Domingo: 9am – 8pm\n"
-                "📌 Av. Principal, frente a la plaza\n\n"
-                "Escribe *menu* para volver."
-            )
-
-        elif incoming_msg == "3":
-            user_state[from_number] = "pedido"
-            return PlainTextResponse(
-                "📝 *Hacer un pedido*\n\n"
-                "¿Qué deseas ordenar?\n"
-                "Ejemplo: '1 pollo entero'\n\n"
-                "Escribe *menu* para volver."
-            )
-
-        else:
-            return PlainTextResponse(
-                "👋 Hola, soy el asistente virtual de *Pollos El Buen Sabor* 🐔\n\n"
-                "1️⃣ Ver precios\n"
-                "2️⃣ Horarios y ubicación\n"
-                "3️⃣ Hacer un pedido\n\n"
-                "Responde con el número de la opción."
-            )
-
-    # 🟡 ESTADO PEDIDO
-    if state == "pedido":
-        user_state[from_number] = "menu"
+    # =========================
+    # MENSAJE DESPUÉS DEL PEDIDO
+    # =========================
+    if "pollo" in incoming_msg or "pedido" in incoming_msg:
         return PlainTextResponse(
-            f"✅ *Pedido recibido*\n\n"
-            f"🧾 Pedido: {incoming_msg}\n\n"
-            "En breve un operador humano te contactará 📞\n\n"
-            "Escribe *menu* para volver."
+            "✅ *Pedido recibido con éxito*\n\n"
+            f"📦 Pedido: {incoming_msg}\n\n"
+            f"{HUMAN_OPERATOR_MSG}\n\n"
+            "Escribe *menu* para volver al inicio."
         )
 
-    # 🔵 FALLBACK
-    user_state[from_number] = "menu"
-    return PlainTextResponse(
-        "No entendí tu mensaje 😅\n"
-        "Escribe *menu* para volver al inicio."
-    )
+    # =========================
+    # RESPUESTA IA (FUTURO)
+    # =========================
+    if USE_AI:
+        return PlainTextResponse("🤖 (Aquí responderá la IA en el futuro)")
+
+    # =========================
+    # MENSAJE NO ENTENDIDO
+    # =========================
+    return PlainTextResponse(UNKNOWN_TEXT)
