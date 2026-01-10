@@ -8,13 +8,13 @@ app = FastAPI()
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # ======================================
-# 🔗 CONEXIÓN DB
+# 🔗 DB
 # ======================================
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 # ======================================
-# 🧱 INICIALIZAR DB
+# 🧱 INIT DB
 # ======================================
 def init_db():
     conn = get_db_connection()
@@ -31,9 +31,8 @@ def init_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
-            id SERIAL PRIMARY KEY,
-            phone VARCHAR(30) UNIQUE,
-            state VARCHAR(30) DEFAULT 'menu'
+            phone VARCHAR(30) PRIMARY KEY,
+            state VARCHAR(30) NOT NULL
         );
     """)
 
@@ -49,15 +48,15 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
-    print("✅ Base de datos inicializada")
+    print("✅ DB lista")
 
 init_db()
 
 # ======================================
-# 📲 WEBHOOK WHATSAPP
+# 📲 WEBHOOK
 # ======================================
 @app.post("/webhook")
-async def whatsapp_webhook(request: Request):
+async def webhook(request: Request):
     form = await request.form()
     message = form.get("Body", "").strip().lower()
     raw_message = form.get("Body", "").strip()
@@ -69,17 +68,15 @@ async def whatsapp_webhook(request: Request):
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # -----------------------------
-        # CUSTOMER
-        # -----------------------------
+        # ---------- CUSTOMER ----------
         cur.execute("SELECT id FROM customers WHERE phone = %s", (phone,))
-        customer = cur.fetchone()
+        row = cur.fetchone()
 
-        if customer:
-            customer_id = customer[0]
+        if row:
+            customer_id = row[0]
             cur.execute(
-                "UPDATE customers SET last_seen = CURRENT_TIMESTAMP WHERE id = %s",
-                (customer_id,)
+                "UPDATE customers SET last_seen = CURRENT_TIMESTAMP WHERE phone = %s",
+                (phone,)
             )
         else:
             cur.execute(
@@ -88,26 +85,17 @@ async def whatsapp_webhook(request: Request):
             )
             customer_id = cur.fetchone()[0]
 
-        # -----------------------------
-        # SESSION
-        # -----------------------------
+        # ---------- SESSION (UPSERT) ----------
+        cur.execute("""
+            INSERT INTO sessions (phone, state)
+            VALUES (%s, 'menu')
+            ON CONFLICT (phone) DO NOTHING
+        """, (phone,))
+
         cur.execute("SELECT state FROM sessions WHERE phone = %s", (phone,))
-        session = cur.fetchone()
+        state = cur.fetchone()[0]
 
-        if session:
-            state = session[0]
-        else:
-            cur.execute(
-                "INSERT INTO sessions (phone, state) VALUES (%s, 'menu')",
-                (phone,)
-            )
-            state = "menu"
-
-        # =============================
-        # LÓGICA DE FLUJO
-        # =============================
-
-        # ---- ESTADO MENU ----
+        # ---------- MENU ----------
         if state == "menu":
 
             if message in ["hola", "menu", "hi"]:
@@ -122,20 +110,16 @@ Responde con el número de la opción.
 
             elif message == "1":
                 reply = """💰 *Precios*
-
-🍗 Pollo entero: $10  
-🍗 Medio pollo: $6  
+🍗 Pollo entero: $10
+🍗 Medio pollo: $6
 
 Escribe *menu* para volver.
                 """
 
             elif message == "2":
-                reply = """📍 *Horario y ubicación*
-
-🕒 Lunes a Domingo  
-11:00 AM – 10:00 PM  
-
-📌 Centro de la ciudad  
+                reply = """📍 *Horario*
+🕒 Lunes a Domingo
+11:00 AM – 10:00 PM
 
 Escribe *menu* para volver.
                 """
@@ -153,37 +137,29 @@ Ejemplo:
                 """
 
             else:
-                reply = """❓ No entendí tu mensaje.
-
-Responde con:
-1️⃣ Precios  
-2️⃣ Horarios  
-3️⃣ Hacer un pedido
+                reply = """❓ Opción inválida.
+Responde 1, 2 o 3.
                 """
 
-        # ---- ESTADO ESPERANDO PEDIDO ----
+        # ---------- WAITING ORDER ----------
         elif state == "waiting_order":
 
-            # Guardar pedido
             cur.execute(
                 "INSERT INTO orders (customer_id, order_text) VALUES (%s, %s)",
                 (customer_id, raw_message)
             )
 
-            # Volver a menú
             cur.execute(
                 "UPDATE sessions SET state = 'menu' WHERE phone = %s",
                 (phone,)
             )
 
-            reply = f"""✅ *Pedido recibido con éxito*
+            reply = f"""✅ *Pedido recibido*
 
 🧾 Pedido:
 {raw_message}
 
-👨‍🍳 Un operador humano te contactará pronto para confirmar.
-
-Gracias por elegirnos ❤️  
+👨‍🍳 Un operador te contactará pronto.
 Escribe *menu* para volver.
             """
 
@@ -192,13 +168,28 @@ Escribe *menu* para volver.
         conn.close()
 
     except Exception as e:
-        print("❌ ERROR:", e)
-        reply = "❌ Ocurrió un error. Intenta nuevamente."
+        print("❌ ERROR REAL:", e)
+
+        # 🔴 RESET DE EMERGENCIA
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE sessions SET state = 'menu' WHERE phone = %s",
+                (phone,)
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+        except:
+            pass
+
+        reply = "❌ Ocurrió un error. Escribe *menu* para continuar."
 
     return Response(
         content=f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Message>{reply}</Message>
+<Message>{reply}</Message>
 </Response>""",
         media_type="application/xml"
     )
