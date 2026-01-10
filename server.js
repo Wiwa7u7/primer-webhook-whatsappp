@@ -11,28 +11,40 @@ app.use(bodyParser.json());
 // ======================================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: false, // Railway interno NO usa SSL
+  ssl: {
+    rejectUnauthorized: false, // 🔥 OBLIGATORIO en Railway
+  },
 });
 
 // ======================================
-// 🧱 CREAR TABLA AUTOMÁTICAMENTE
+// 🧱 INICIALIZAR BASE DE DATOS
 // ======================================
 async function initDB() {
   try {
+    console.log("⏳ Conectando a PostgreSQL...");
+
+    // Test REAL de conexión
+    await pool.query("SELECT 1");
+    console.log("✅ Conexión a PostgreSQL OK");
+
+    // Crear tabla si no existe
     await pool.query(`
       CREATE TABLE IF NOT EXISTS orders (
         id SERIAL PRIMARY KEY,
         phone VARCHAR(30),
-        order_text TEXT,
+        order_text TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
     console.log("✅ Tabla orders creada o ya existente");
+
   } catch (error) {
-    console.error("❌ Error creando la tabla:", error);
+    console.error("❌ ERROR INICIALIZANDO DB:", error);
   }
 }
 
+// Ejecutar al iniciar el servidor
 initDB();
 
 // ======================================
@@ -115,9 +127,9 @@ Escribe *menu* para volver.
 
   res.set("Content-Type", "text/xml");
   res.send(`
-    <Response>
-      <Message>${reply}</Message>
-    </Response>
+<Response>
+  <Message>${reply}</Message>
+</Response>
   `);
 });
 
