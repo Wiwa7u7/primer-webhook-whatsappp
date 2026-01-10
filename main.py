@@ -7,95 +7,60 @@ app = FastAPI()
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# ======================================
-# 🔗 CONEXIÓN A POSTGRES (RAILWAY)
-# ======================================
 def get_db_connection():
-    return psycopg2.connect(
-        DATABASE_URL,
-        sslmode="require"
-    )
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
-# ======================================
-# 🧱 INICIALIZAR BASE DE DATOS
-# ======================================
 def init_db():
-    try:
-        print("⏳ Conectando a PostgreSQL...")
-        conn = get_db_connection()
-        cur = conn.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-        cur.execute("SELECT 1;")
-        print("✅ Conexión a PostgreSQL OK")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS customers (
+            id SERIAL PRIMARY KEY,
+            phone VARCHAR(30) UNIQUE,
+            first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
 
-        # Tabla clientes
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS customers (
-                id SERIAL PRIMARY KEY,
-                phone VARCHAR(30) UNIQUE,
-                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            id SERIAL PRIMARY KEY,
+            customer_id INTEGER REFERENCES customers(id),
+            order_text TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
 
-        # Tabla pedidos
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS orders (
-                id SERIAL PRIMARY KEY,
-                customer_id INTEGER REFERENCES customers(id),
-                order_text TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        print("✅ Tablas customers y orders listas")
-
-    except Exception as e:
-        print("❌ ERROR INICIALIZANDO DB:", e)
+    conn.commit()
+    cur.close()
+    conn.close()
 
 init_db()
 
-# ======================================
-# 🧠 DETECCIÓN INTELIGENTE DE INTENCIÓN
-# ======================================
 def detect_intent(message: str):
     msg = message.lower()
 
-    if any(word in msg for word in ["hola", "buenas", "hey"]):
+    if any(w in msg for w in ["hola", "buenas", "hey"]):
         return "greeting"
-
-    if any(word in msg for word in ["precio", "cuesta", "vale"]):
+    if any(w in msg for w in ["precio", "cuesta"]):
         return "prices"
-
-    if any(word in msg for word in ["horario", "abierto", "cierran"]):
+    if any(w in msg for w in ["horario", "abierto", "cierran"]):
         return "hours"
-
-    if any(word in msg for word in ["donde", "ubicacion", "dirección"]):
-        return "location"
-
-    if any(word in msg for word in ["pollo", "pedido", "ordenar", "quiero"]):
-        return "order"
-
-    if any(word in msg for word in ["gracias", "ok", "perfecto"]):
-        return "thanks"
-
+    if any(w in msg for w in ["pedido", "ordenar", "quiero pedir", "hacer un pedido"]):
+        return "order_intent"
     return "unknown"
 
-# ======================================
-# 📲 WEBHOOK WHATSAPP (TWILIO)
-# ======================================
+def is_real_order(message: str):
+    keywords = ["pollo", "pollos", "entero", "medio", "1", "2", "3"]
+    return any(word in message for word in keywords)
+
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     raw_message = form.get("Body", "").strip()
     message = raw_message.lower()
     from_number = form.get("From", "")
-
-    print("📩 Mensaje recibido:", raw_message)
 
     reply = ""
     intent = detect_intent(message)
@@ -104,11 +69,7 @@ async def whatsapp_webhook(request: Request):
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Buscar o crear cliente
-        cur.execute(
-            "SELECT id FROM customers WHERE phone = %s",
-            (from_number,)
-        )
+        cur.execute("SELECT id FROM customers WHERE phone = %s", (from_number,))
         customer = cur.fetchone()
 
         if customer:
@@ -124,79 +85,42 @@ async def whatsapp_webhook(request: Request):
             )
             customer_id = cur.fetchone()[0]
 
-        # =========================
-        # RESPUESTAS SEGÚN INTENCIÓN
-        # =========================
+        # RESPUESTAS
         if intent == "greeting":
-            reply = """
-👋 Hola! Bienvenido a *Pollos El Buen Sabor* 🍗
-
-Puedes preguntarme por:
-• precios
-• horarios
-• hacer un pedido
-            """
+            reply = """👋 Hola! Bienvenido a *Pollos El Buen Sabor* 🍗
+Puedes preguntarme por precios, horarios o hacer un pedido."""
 
         elif intent == "prices":
-            reply = """
-💰 *Nuestros precios*
-
-🍗 Pollo entero: $10  
-🍗 Medio pollo: $6  
-
-¿Deseas hacer un pedido?
-            """
+            reply = """💰 Pollo entero $10
+🍗 Medio pollo $6"""
 
         elif intent == "hours":
-            reply = """
-🕒 *Horario*
+            reply = """🕒 Lunes a Domingo
+11:00 AM – 10:00 PM"""
 
-Lunes a Domingo  
-11:00 AM – 10:00 PM
-            """
+        elif intent == "order_intent":
+            reply = """✍️ Perfecto, escríbeme tu pedido.
+Ejemplo: 2 pollos enteros"""
 
-        elif intent == "location":
-            reply = """
-📍 *Ubicación*
-
-Estamos en el centro de la ciudad.
-            """
-
-        elif intent == "order":
+        elif is_real_order(message):
             cur.execute(
                 "INSERT INTO orders (customer_id, order_text) VALUES (%s, %s)",
                 (customer_id, raw_message)
             )
-
-            reply = f"""
-✅ *Pedido recibido*
-
-🧾 Pedido:
+            reply = f"""✅ Pedido recibido:
 {raw_message}
-
-Un operador humano te contactará para confirmar 👨‍🍳
-            """
-
-        elif intent == "thanks":
-            reply = "🙏 ¡Gracias por escribirnos! Estamos para ayudarte."
+Un operador te confirmará 👨‍🍳"""
 
         else:
-            reply = """
-🤔 Puedo ayudarte con:
-• precios
-• horarios
-• ubicación
-• pedidos
-
-Solo dime qué necesitas 😊
-            """
+            reply = """🤔 No entendí del todo.
+Puedes escribir: precios, horarios o tu pedido."""
 
         conn.commit()
         cur.close()
         conn.close()
 
     except Exception as e:
-        print("❌ Error procesando mensaje:", e)
+        print("ERROR:", e)
         reply = "❌ Ocurrió un error. Intenta nuevamente."
 
     return Response(
