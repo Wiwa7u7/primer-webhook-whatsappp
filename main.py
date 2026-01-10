@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import Response
 import psycopg2
 import os
 
@@ -13,7 +13,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 def get_db_connection():
     return psycopg2.connect(
         DATABASE_URL,
-        sslmode="require"  # 🔥 OBLIGATORIO en Railway
+        sslmode="require"
     )
 
 # ======================================
@@ -22,17 +22,27 @@ def get_db_connection():
 def init_db():
     try:
         print("⏳ Conectando a PostgreSQL...")
-
         conn = get_db_connection()
         cur = conn.cursor()
 
         cur.execute("SELECT 1;")
         print("✅ Conexión a PostgreSQL OK")
 
+        # Tabla clientes
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS customers (
+                id SERIAL PRIMARY KEY,
+                phone VARCHAR(30) UNIQUE,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # Tabla pedidos
         cur.execute("""
             CREATE TABLE IF NOT EXISTS orders (
                 id SERIAL PRIMARY KEY,
-                phone VARCHAR(30),
+                customer_id INTEGER REFERENCES customers(id),
                 order_text TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -42,7 +52,7 @@ def init_db():
         cur.close()
         conn.close()
 
-        print("✅ Tabla orders creada o ya existente")
+        print("✅ Tablas customers y orders listas")
 
     except Exception as e:
         print("❌ ERROR INICIALIZANDO DB:", e)
@@ -50,89 +60,146 @@ def init_db():
 init_db()
 
 # ======================================
+# 🧠 DETECCIÓN INTELIGENTE DE INTENCIÓN
+# ======================================
+def detect_intent(message: str):
+    msg = message.lower()
+
+    if any(word in msg for word in ["hola", "buenas", "hey"]):
+        return "greeting"
+
+    if any(word in msg for word in ["precio", "cuesta", "vale"]):
+        return "prices"
+
+    if any(word in msg for word in ["horario", "abierto", "cierran"]):
+        return "hours"
+
+    if any(word in msg for word in ["donde", "ubicacion", "dirección"]):
+        return "location"
+
+    if any(word in msg for word in ["pollo", "pedido", "ordenar", "quiero"]):
+        return "order"
+
+    if any(word in msg for word in ["gracias", "ok", "perfecto"]):
+        return "thanks"
+
+    return "unknown"
+
+# ======================================
 # 📲 WEBHOOK WHATSAPP (TWILIO)
 # ======================================
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     form = await request.form()
-    message = form.get("Body", "").strip().lower()
+    raw_message = form.get("Body", "").strip()
+    message = raw_message.lower()
     from_number = form.get("From", "")
 
+    print("📩 Mensaje recibido:", raw_message)
+
     reply = ""
+    intent = detect_intent(message)
 
-    if message in ["hola", "menu"]:
-        reply = """
-👋 Hola, soy el asistente de *Pollos El Buen Sabor* 🍗
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-1️⃣ Ver precios  
-2️⃣ Horarios y ubicación  
-3️⃣ Hacer un pedido  
+        # Buscar o crear cliente
+        cur.execute(
+            "SELECT id FROM customers WHERE phone = %s",
+            (from_number,)
+        )
+        customer = cur.fetchone()
 
-Responde con el número de la opción.
-        """
+        if customer:
+            customer_id = customer[0]
+            cur.execute(
+                "UPDATE customers SET last_seen = CURRENT_TIMESTAMP WHERE id = %s",
+                (customer_id,)
+            )
+        else:
+            cur.execute(
+                "INSERT INTO customers (phone) VALUES (%s) RETURNING id",
+                (from_number,)
+            )
+            customer_id = cur.fetchone()[0]
 
-    elif message == "1":
-        reply = """
-💰 *Precios*
+        # =========================
+        # RESPUESTAS SEGÚN INTENCIÓN
+        # =========================
+        if intent == "greeting":
+            reply = """
+👋 Hola! Bienvenido a *Pollos El Buen Sabor* 🍗
+
+Puedes preguntarme por:
+• precios
+• horarios
+• hacer un pedido
+            """
+
+        elif intent == "prices":
+            reply = """
+💰 *Nuestros precios*
 
 🍗 Pollo entero: $10  
 🍗 Medio pollo: $6  
 
-Escribe *menu* para volver.
-        """
-
-    elif message == "2":
-        reply = """
-📍 *Horario y ubicación*
-
-🕒 Lunes a Domingo: 11am - 10pm  
-📌 Centro de la ciudad  
-
-Escribe *menu* para volver.
-        """
-
-    elif message == "3":
-        reply = """
-✍️ Perfecto, escribe tu pedido.
-Ejemplo:
-👉 1 pollo entero y 1 medio pollo
-        """
-
-    else:
-        try:
-            conn = get_db_connection()
-            cur = conn.cursor()
-
-            cur.execute(
-                "INSERT INTO orders (phone, order_text) VALUES (%s, %s)",
-                (from_number, message)
-            )
-
-            conn.commit()
-            cur.close()
-            conn.close()
-
-            reply = f"""
-✅ *Pedido recibido con éxito*
-
-🧾 Pedido:
-{message}
-
-👨‍🍳 Un operador humano te contactará pronto para confirmar.
-
-Gracias por elegirnos ❤️  
-Escribe *menu* para volver.
+¿Deseas hacer un pedido?
             """
 
-        except Exception as e:
-            print("❌ Error guardando pedido:", e)
-            reply = "❌ Error al guardar tu pedido. Intenta nuevamente."
+        elif intent == "hours":
+            reply = """
+🕒 *Horario*
 
-    return PlainTextResponse(
-        content=f"""
-<Response>
-  <Message>{reply}</Message>
-</Response>
-        """,
-        media_type="text/xml"
+Lunes a Domingo  
+11:00 AM – 10:00 PM
+            """
+
+        elif intent == "location":
+            reply = """
+📍 *Ubicación*
+
+Estamos en el centro de la ciudad.
+            """
+
+        elif intent == "order":
+            cur.execute(
+                "INSERT INTO orders (customer_id, order_text) VALUES (%s, %s)",
+                (customer_id, raw_message)
+            )
+
+            reply = f"""
+✅ *Pedido recibido*
+
+🧾 Pedido:
+{raw_message}
+
+Un operador humano te contactará para confirmar 👨‍🍳
+            """
+
+        elif intent == "thanks":
+            reply = "🙏 ¡Gracias por escribirnos! Estamos para ayudarte."
+
+        else:
+            reply = """
+🤔 Puedo ayudarte con:
+• precios
+• horarios
+• ubicación
+• pedidos
+
+Solo dime qué necesitas 😊
+            """
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    except Exception as e:
+        print("❌ Error procesando mensaje:", e)
+        reply = "❌ Ocurrió un error. Intenta nuevamente."
+
+    return Response(
+        content=f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{reply}</Message></Response>',
+        media_type="application/xml"
     )
