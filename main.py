@@ -1,195 +1,145 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse
+from twilio.twiml.messaging_response import MessagingResponse
 import psycopg2
 import os
 
 app = FastAPI()
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ======================================
-# 🔗 DB
-# ======================================
-def get_db_connection():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
 
-# ======================================
-# 🧱 INIT DB
-# ======================================
-def init_db():
-    conn = get_db_connection()
+def clean_text(text: str) -> str:
+    return (
+        text.replace("&", "y")
+            .replace("<", "")
+            .replace(">", "")
+            .replace("*", "")
+    )
+
+@app.post("/webhook")
+async def whatsapp_webhook(request: Request):
+    form = await request.form()
+    phone = form.get("From")
+    message = form.get("Body", "").strip().lower()
+
+    resp = MessagingResponse()
+    msg = resp.message()
+
+    conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS customers (
-            id SERIAL PRIMARY KEY,
-            phone VARCHAR(30) UNIQUE,
-            first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
+    # --- CUSTOMER ---
+    cur.execute(
+        "SELECT id FROM customers WHERE phone = %s",
+        (phone,)
+    )
+    customer = cur.fetchone()
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            phone VARCHAR(30) PRIMARY KEY,
-            state VARCHAR(30) NOT NULL
-        );
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS orders (
-            id SERIAL PRIMARY KEY,
-            customer_id INTEGER REFERENCES customers(id),
-            order_text TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
-
-    conn.commit()
-    cur.close()
-    conn.close()
-    print("✅ DB lista")
-
-init_db()
-
-# ======================================
-# 📲 WEBHOOK
-# ======================================
-@app.post("/webhook")
-async def webhook(request: Request):
-    form = await request.form()
-    message = form.get("Body", "").strip().lower()
-    raw_message = form.get("Body", "").strip()
-    phone = form.get("From", "")
-
-    reply = ""
-
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        # ---------- CUSTOMER ----------
-        cur.execute("SELECT id FROM customers WHERE phone = %s", (phone,))
-        row = cur.fetchone()
-
-        if row:
-            customer_id = row[0]
-            cur.execute(
-                "UPDATE customers SET last_seen = CURRENT_TIMESTAMP WHERE phone = %s",
-                (phone,)
-            )
-        else:
-            cur.execute(
-                "INSERT INTO customers (phone) VALUES (%s) RETURNING id",
-                (phone,)
-            )
-            customer_id = cur.fetchone()[0]
-
-        # ---------- SESSION (UPSERT) ----------
-        cur.execute("""
-            INSERT INTO sessions (phone, state)
-            VALUES (%s, 'menu')
-            ON CONFLICT (phone) DO NOTHING
-        """, (phone,))
-
-        cur.execute("SELECT state FROM sessions WHERE phone = %s", (phone,))
-        state = cur.fetchone()[0]
-
-        # ---------- MENU ----------
-        if state == "menu":
-
-            if message in ["hola", "menu", "hi"]:
-                reply = """👋 Hola, soy el asistente de *Pollos El Buen Sabor* 🍗
-
-1️⃣ Ver precios  
-2️⃣ Horarios y ubicación  
-3️⃣ Hacer un pedido  
-
-Responde con el número de la opción.
-                """
-
-            elif message == "1":
-                reply = """💰 *Precios*
-🍗 Pollo entero: $10
-🍗 Medio pollo: $6
-
-Escribe *menu* para volver.
-                """
-
-            elif message == "2":
-                reply = """📍 *Horario*
-🕒 Lunes a Domingo
-11:00 AM – 10:00 PM
-
-Escribe *menu* para volver.
-                """
-
-            elif message == "3":
-                cur.execute(
-                    "UPDATE sessions SET state = 'waiting_order' WHERE phone = %s",
-                    (phone,)
-                )
-                reply = """✍️ Perfecto.
-Escribe tu pedido.
-
-Ejemplo:
-👉 2 pollos enteros
-                """
-
-            else:
-                reply = """❓ Opción inválida.
-Responde 1, 2 o 3.
-                """
-
-        # ---------- WAITING ORDER ----------
-        elif state == "waiting_order":
-
-            cur.execute(
-                "INSERT INTO orders (customer_id, order_text) VALUES (%s, %s)",
-                (customer_id, raw_message)
-            )
-
-            cur.execute(
-                "UPDATE sessions SET state = 'menu' WHERE phone = %s",
-                (phone,)
-            )
-
-            reply = f"""✅ *Pedido recibido*
-
-🧾 Pedido:
-{raw_message}
-
-👨‍🍳 Un operador te contactará pronto.
-Escribe *menu* para volver.
-            """
-
+    if not customer:
+        cur.execute(
+            "INSERT INTO customers (phone) VALUES (%s)",
+            (phone,)
+        )
         conn.commit()
-        cur.close()
-        conn.close()
 
-    except Exception as e:
-        print("❌ ERROR REAL:", e)
+    # --- SESSION ---
+    cur.execute(
+        "SELECT state FROM sessions WHERE phone = %s",
+        (phone,)
+    )
+    session = cur.fetchone()
 
-        # 🔴 RESET DE EMERGENCIA
-        try:
-            conn = get_db_connection()
-            cur = conn.cursor()
+    if not session:
+        cur.execute(
+            "INSERT INTO sessions (phone, state) VALUES (%s, %s)",
+            (phone, "menu")
+        )
+        conn.commit()
+        state = "menu"
+    else:
+        state = session[0]
+
+    # --- GLOBAL MENU ---
+    if message in ["menu", "hola", "hi", "hello"]:
+        cur.execute(
+            "UPDATE sessions SET state = %s WHERE phone = %s",
+            ("menu", phone)
+        )
+        conn.commit()
+
+        msg.body(
+            "👋 Hola, soy el asistente de Pollos El Buen Sabor 🍗\n\n"
+            "1️⃣ Ver precios\n"
+            "2️⃣ Horarios y ubicación\n"
+            "3️⃣ Hacer un pedido\n\n"
+            "Responde con el número de la opción."
+        )
+        return PlainTextResponse(str(resp))
+
+    # --- MENU OPTIONS ---
+    if state == "menu":
+        if message == "1":
+            msg.body(
+                "💲 Precios\n"
+                "🍗 Pollo entero: $10\n"
+                "🍗 Medio pollo: $6\n\n"
+                "Escribe *menu* para volver."
+            )
+
+        elif message == "2":
+            msg.body(
+                "🕒 Horario\n"
+                "Lunes a Domingo\n"
+                "11:00 AM – 10:00 PM\n\n"
+                "Escribe *menu* para volver."
+            )
+
+        elif message == "3":
             cur.execute(
-                "UPDATE sessions SET state = 'menu' WHERE phone = %s",
-                (phone,)
+                "UPDATE sessions SET state = %s WHERE phone = %s",
+                ("waiting_order", phone)
             )
             conn.commit()
-            cur.close()
-            conn.close()
-        except:
-            pass
 
-        reply = "❌ Ocurrió un error. Escribe *menu* para continuar."
+            msg.body(
+                "✍️ Escribe tu pedido.\n"
+                "Ejemplo:\n"
+                "2 pollos enteros"
+            )
 
-    return Response(
-        content=f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-<Message>{reply}</Message>
-</Response>""",
-        media_type="application/xml"
-    )
+        else:
+            msg.body("❌ Opción inválida. Escribe *menu*.")
+
+        return PlainTextResponse(str(resp))
+
+    # --- ORDER FLOW ---
+    if state == "waiting_order":
+        safe_order = clean_text(message)
+
+        # 🔥 AQUÍ SE GUARDA SÍ O SÍ
+        cur.execute(
+            "INSERT INTO orders (phone, order_text) VALUES (%s, %s)",
+            (phone, safe_order)
+        )
+
+        cur.execute(
+            "UPDATE sessions SET state = %s WHERE phone = %s",
+            ("menu", phone)
+        )
+
+        conn.commit()
+
+        msg.body(
+            "✅ Pedido recibido con éxito.\n\n"
+            f"🧾 Pedido:\n{safe_order}\n\n"
+            "Un operador te contactará pronto.\n"
+            "Escribe *menu* para volver."
+        )
+
+        return PlainTextResponse(str(resp))
+
+    msg.body("❌ Ocurrió un error. Escribe *menu*.")
+    return PlainTextResponse(str(resp))
