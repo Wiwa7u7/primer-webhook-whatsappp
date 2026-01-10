@@ -52,7 +52,7 @@ init_db()
 # ======================================
 # 📲 WEBHOOK WHATSAPP (TWILIO)
 # ======================================
-@app.post("/whatsapp")
+@app.post("/webhook")
 async def whatsapp_webhook(request: Request):
     form = await request.form()
     message = form.get("Body", "").strip().lower()
