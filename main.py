@@ -1,94 +1,107 @@
-from fastapi import FastAPI, Request, Response
+from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
 import psycopg2
 import os
 
-app = FastAPI()
+app = Flask(__name__)
 
-# =========================
-# 🔗 POSTGRES
-# =========================
+# ========================
+# CONFIG
+# ========================
 DATABASE_URL = os.getenv("DATABASE_URL")
-conn = psycopg2.connect(DATABASE_URL)
-conn.autocommit = True
-cursor = conn.cursor()
 
-# =========================
-# 🧱 TABLAS
-# =========================
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS customers (
-    id SERIAL PRIMARY KEY,
-    phone VARCHAR(30) UNIQUE
-);
-""")
+# Imagen placeholder (puedes cambiarla luego)
+COMBO_IMAGE = "https://via.placeholder.com/600x400.png?text=Combo+Pollo+El+Buen+Sabor"
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS sessions (
-    phone VARCHAR(30) PRIMARY KEY,
-    state VARCHAR(50)
-);
-""")
+# ========================
+# DB CONNECTION
+# ========================
+def get_db():
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS orders (
-    id SERIAL PRIMARY KEY,
-    phone VARCHAR(30),
-    order_text TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-""")
+# ========================
+# HELPERS
+# ========================
+def normalize(text):
+    return text.strip().lower()
 
-# =========================
-# 📸 IMÁGENES PLACEHOLDER
-# =========================
-MENU_IMAGE = "https://images.unsplash.com/photo-1600891964599-f61ba0e24092"
-COMBO_IMAGE = "https://images.unsplash.com/photo-1598515213692-5f252bcb2c1c"
+def get_session(phone):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT state FROM sessions WHERE phone = %s", (phone,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row[0] if row else "menu"
 
-# =========================
-# 📲 WEBHOOK
-# =========================
-@app.post("/webhook")
-async def whatsapp_webhook(request: Request):
-    form = await request.form()
-    text = form.get("Body", "").strip().lower()
-    phone = form.get("From")
+def set_session(phone, state):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO sessions (phone, state)
+        VALUES (%s, %s)
+        ON CONFLICT (phone)
+        DO UPDATE SET state = EXCLUDED.state
+    """, (phone, state))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def ensure_customer(phone):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO customers (phone)
+        VALUES (%s)
+        ON CONFLICT (phone) DO NOTHING
+    """, (phone,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def save_order(phone, order_text):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO orders (phone, order_text)
+        VALUES (%s, %s)
+    """, (phone, order_text))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# ========================
+# MAIN WEBHOOK
+# ========================
+@app.route("/whatsapp", methods=["POST"])
+def whatsapp():
+    phone = request.form.get("From")
+    text = normalize(request.form.get("Body", ""))
 
     resp = MessagingResponse()
     msg = resp.message()
 
-    # CUSTOMER
-    cursor.execute(
-        "INSERT INTO customers (phone) VALUES (%s) ON CONFLICT DO NOTHING",
-        (phone,)
-    )
+    ensure_customer(phone)
+    state = get_session(phone)
 
-    # SESSION
-    cursor.execute("SELECT state FROM sessions WHERE phone=%s", (phone,))
-    row = cursor.fetchone()
-    state = row[0] if row else "menu"
-
-    # RESET
-    if text in ["hola", "menu"]:
-        cursor.execute("""
-            INSERT INTO sessions (phone, state)
-            VALUES (%s,'menu')
-            ON CONFLICT (phone) DO UPDATE SET state='menu'
-        """, (phone,))
-
+    # ========================
+    # GLOBAL COMMANDS
+    # ========================
+    if text in ["menu", "hola", "hi", "hello"]:
+        set_session(phone, "menu")
         msg.body(
-            "👋 Hola, soy el asistente de *Pollos El Buen Sabor* 🍗\n\n"
+            "👋 *Hola, soy el asistente de Pollos El Buen Sabor 🍗*\n\n"
             "1️⃣ Ver precios\n"
             "2️⃣ Horarios y ubicación\n"
             "3️⃣ Hacer un pedido\n"
-            "4️⃣ Ver combos 🍗📸\n\n"
+            "4️⃣ Ver combos 📸\n\n"
             "Responde con el número de la opción."
         )
-        return Response(content=str(resp), media_type="application/xml")
+        return Response(str(resp), media_type="application/xml")
 
-    # =========================
-    # 📋 MENÚ
-    # =========================
+    # ========================
+    # MENU STATE
+    # ========================
     if state == "menu":
 
         if text == "1":
@@ -98,66 +111,64 @@ async def whatsapp_webhook(request: Request):
                 "🍗 Medio pollo: $6\n\n"
                 "Escribe *menu* para volver."
             )
+            return Response(str(resp), media_type="application/xml")
 
         elif text == "2":
             msg.body(
-                "🕒 *Horario*\n"
+                "🕐 *Horario*\n"
                 "Lunes a Domingo\n"
                 "11:00 AM – 10:00 PM\n\n"
+                "📍 *Ubicación*\n"
+                "Av. Principal #123\n\n"
                 "Escribe *menu* para volver."
             )
+            return Response(str(resp), media_type="application/xml")
 
         elif text == "3":
-            cursor.execute("""
-                INSERT INTO sessions (phone, state)
-                VALUES (%s,'ordering')
-                ON CONFLICT (phone) DO UPDATE SET state='ordering'
-            """, (phone,))
-
+            set_session(phone, "ordering")
             msg.body(
-                "✍️ Perfecto.\n"
-                "Escribe tu pedido.\n\n"
+                "✍️ *Perfecto.*\n\n"
+                "Escribe tu pedido.\n"
                 "Ejemplo:\n"
                 "👉 2 pollos enteros"
             )
+            return Response(str(resp), media_type="application/xml")
 
         elif text == "4":
             msg.body("🍗 *Nuestros combos más populares*")
             msg.media(COMBO_IMAGE)
-            msg.body("\nEscribe *menu* para volver.")
+            msg.body(
+                "\n\n¿Deseas hacer un pedido?\n"
+                "👉 Escribe *3* para ordenar\n"
+                "👉 Escribe *menu* para volver"
+            )
+            return Response(str(resp), media_type="application/xml")
 
         else:
-            msg.body(
-                "❌ Opción no válida.\n\n"
-                "1️⃣ Precios\n"
-                "2️⃣ Horarios\n"
-                "3️⃣ Pedido\n"
-                "4️⃣ Combos\n"
-            )
+            msg.body("❌ Opción no válida. Escribe *menu* para ver las opciones.")
+            return Response(str(resp), media_type="application/xml")
 
-        return Response(content=str(resp), media_type="application/xml")
-
-    # =========================
-    # 🧾 PEDIDO
-    # =========================
+    # ========================
+    # ORDERING STATE
+    # ========================
     if state == "ordering":
-        try:
-            cursor.execute(
-                "INSERT INTO orders (phone, order_text) VALUES (%s,%s)",
-                (phone, text)
-            )
-            cursor.execute(
-                "UPDATE sessions SET state='menu' WHERE phone=%s",
-                (phone,)
-            )
+        save_order(phone, text)
+        set_session(phone, "menu")
 
-            msg.body(
-                "✅ *Pedido recibido con éxito*\n\n"
-                f"🧾 Pedido:\n{text}\n\n"
-                "👨‍🍳 Un operador te contactará pronto.\n\n"
-                "Escribe *menu* para volver."
-            )
-        except:
-            msg.body("❌ Error guardando pedido. Escribe *menu*.")
+        msg.body(
+            "✅ *Pedido recibido con éxito.*\n\n"
+            f"🧾 *Pedido:*\n{text}\n\n"
+            "Un operador te contactará pronto.\n\n"
+            "Escribe *menu* para volver."
+        )
+        return Response(str(resp), media_type="application/xml")
 
-        return Response(content=str(resp), media_type="application/xml")
+    # ========================
+    # FALLBACK
+    # ========================
+    msg.body("❌ Ocurrió un error. Escribe *menu* para continuar.")
+    return Response(str(resp), media_type="application/xml")
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
