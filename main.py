@@ -5,170 +5,158 @@ import os
 
 app = Flask(__name__)
 
-# ========================
-# CONFIG
-# ========================
-DATABASE_URL = os.getenv("DATABASE_URL")
+# ==========================
+# 🔗 DATABASE CONNECTION
+# ==========================
+DATABASE_URL = os.environ["DATABASE_URL"]
+conn = psycopg.connect(DATABASE_URL)
+conn.autocommit = True
 
-# Imagen placeholder (puedes cambiarla luego)
-COMBO_IMAGE = "https://www.freepik.es/fotos-vectores-gratis/dibujos-animados-pollo"
+# ==========================
+# 🧱 INIT DATABASE
+# ==========================
+def init_db():
+    with conn.cursor() as cur:
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS customers (
+            phone TEXT PRIMARY KEY,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
 
-# ========================
-# DB CONNECTION
-# ========================
-def get_db():
-    return psycopg.connect(DATABASE_URL, sslmode="require")
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            phone TEXT PRIMARY KEY,
+            state TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
 
-# ========================
-# HELPERS
-# ========================
-def normalize(text):
-    return text.strip().lower()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            id SERIAL PRIMARY KEY,
+            phone TEXT,
+            order_text TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
 
-def get_session(phone):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT state FROM sessions WHERE phone = %s", (phone,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row[0] if row else "menu"
+init_db()
 
-def set_session(phone, state):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
+# ==========================
+# 🧠 SESSION HELPERS
+# ==========================
+def get_state(phone):
+    with conn.cursor() as cur:
+        cur.execute("SELECT state FROM sessions WHERE phone = %s", (phone,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+def set_state(phone, state):
+    with conn.cursor() as cur:
+        cur.execute("""
         INSERT INTO sessions (phone, state)
         VALUES (%s, %s)
         ON CONFLICT (phone)
-        DO UPDATE SET state = EXCLUDED.state
-    """, (phone, state))
-    conn.commit()
-    cur.close()
-    conn.close()
+        DO UPDATE SET state = EXCLUDED.state, updated_at = CURRENT_TIMESTAMP
+        """, (phone, state))
 
 def ensure_customer(phone):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
+    with conn.cursor() as cur:
+        cur.execute("""
         INSERT INTO customers (phone)
         VALUES (%s)
-        ON CONFLICT (phone) DO NOTHING
-    """, (phone,))
-    conn.commit()
-    cur.close()
-    conn.close()
+        ON CONFLICT DO NOTHING
+        """, (phone,))
 
-def save_order(phone, order_text):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO orders (phone, order_text)
-        VALUES (%s, %s)
-    """, (phone, order_text))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-# ========================
-# MAIN WEBHOOK
-# ========================
-@app.route("/whatsapp", methods=["POST"])
+# ==========================
+# 📲 WHATSAPP WEBHOOK
+# ==========================
+@app.route("/webhook", methods=["POST"])
 def whatsapp():
+    print("📩 Webhook recibido")
+    print(request.form)
+
+    incoming_msg = request.form.get("Body", "").strip().lower()
     phone = request.form.get("From")
-    text = normalize(request.form.get("Body", ""))
+
+    ensure_customer(phone)
+    state = get_state(phone)
 
     resp = MessagingResponse()
     msg = resp.message()
 
-    ensure_customer(phone)
-    state = get_session(phone)
-
-    # ========================
-    # GLOBAL COMMANDS
-    # ========================
-    if text in ["menu", "hola", "hi", "hello"]:
-        set_session(phone, "menu")
+    # ===== GLOBAL COMMANDS =====
+    if incoming_msg in ["menu", "hola", "hi", "hello"]:
+        set_state(phone, "menu")
         msg.body(
-            "👋 *Hola, soy el asistente de Pollos El Buen Sabor 🍗*\n\n"
+            "👋 Hola, soy el asistente de *Pollos El Buen Sabor* 🍗\n\n"
             "1️⃣ Ver precios\n"
             "2️⃣ Horarios y ubicación\n"
-            "3️⃣ Hacer un pedido\n"
-            "4️⃣ Ver combos 📸\n\n"
+            "3️⃣ Hacer un pedido\n\n"
             "Responde con el número de la opción."
         )
-        return Response(str(resp), media_type="application/xml")
+        return Response(str(resp), mimetype="text/xml")
 
-    # ========================
-    # MENU STATE
-    # ========================
+    # ===== MENU STATE =====
     if state == "menu":
-
-        if text == "1":
+        if incoming_msg == "1":
             msg.body(
                 "💰 *Precios*\n\n"
                 "🍗 Pollo entero: $10\n"
                 "🍗 Medio pollo: $6\n\n"
                 "Escribe *menu* para volver."
             )
-            return Response(str(resp), media_type="application/xml")
 
-        elif text == "2":
+        elif incoming_msg == "2":
             msg.body(
-                "🕐 *Horario*\n"
-                "Lunes a Domingo\n"
+                "📍 *Horario y ubicación*\n\n"
+                "🕒 Lunes a Domingo\n"
                 "11:00 AM – 10:00 PM\n\n"
-                "📍 *Ubicación*\n"
-                "Av. Principal #123\n\n"
                 "Escribe *menu* para volver."
             )
-            return Response(str(resp), media_type="application/xml")
 
-        elif text == "3":
-            set_session(phone, "ordering")
+        elif incoming_msg == "3":
+            set_state(phone, "ordering")
             msg.body(
-                "✍️ *Perfecto.*\n\n"
-                "Escribe tu pedido.\n"
+                "✍️ Perfecto.\n"
+                "Escribe tu pedido.\n\n"
                 "Ejemplo:\n"
                 "👉 2 pollos enteros"
             )
-            return Response(str(resp), media_type="application/xml")
-
-        elif text == "4":
-            msg.body("🍗 *Nuestros combos más populares*")
-            msg.media(COMBO_IMAGE)
-            msg.body(
-                "\n\n¿Deseas hacer un pedido?\n"
-                "👉 Escribe *3* para ordenar\n"
-                "👉 Escribe *menu* para volver"
-            )
-            return Response(str(resp), media_type="application/xml")
 
         else:
-            msg.body("❌ Opción no válida. Escribe *menu* para ver las opciones.")
-            return Response(str(resp), media_type="application/xml")
+            msg.body("❌ Opción no válida. Escribe *menu* para continuar.")
 
-    # ========================
-    # ORDERING STATE
-    # ========================
+        return Response(str(resp), mimetype="text/xml")
+
+    # ===== ORDERING STATE =====
     if state == "ordering":
-        save_order(phone, text)
-        set_session(phone, "menu")
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO orders (phone, order_text) VALUES (%s, %s)",
+                (phone, incoming_msg)
+            )
+
+        set_state(phone, "menu")
 
         msg.body(
-            "✅ *Pedido recibido con éxito.*\n\n"
-            f"🧾 *Pedido:*\n{text}\n\n"
-            "Un operador te contactará pronto.\n\n"
+            "✅ *Pedido recibido con éxito*\n\n"
+            f"🧾 Pedido:\n{incoming_msg}\n\n"
+            "👨‍🍳 Un operador te contactará pronto.\n\n"
             "Escribe *menu* para volver."
         )
-        return Response(str(resp), media_type="application/xml")
 
-    # ========================
-    # FALLBACK
-    # ========================
-    msg.body("❌ Ocurrió un error. Escribe *menu* para continuar.")
-    return Response(str(resp), media_type="application/xml")
+        return Response(str(resp), mimetype="text/xml")
+
+    # ===== FALLBACK =====
+    set_state(phone, "menu")
+    msg.body("⚠️ Algo no salió bien. Escribe *menu* para continuar.")
+    return Response(str(resp), mimetype="text/xml")
 
 
+# ==========================
+# 🚀 LOCAL RUN (ignored in Railway)
+# ==========================
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=3000)
