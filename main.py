@@ -106,7 +106,7 @@ def whatsapp():
             msg.body("✍️ Escribe tu pedido (ej: 2 pollos enteros)")
 
         elif incoming == "4":
-            msg = resp.message(
+            msg.body(
                 "🔥 *Combo Familiar*\n\n"
                 "🍗 2 pollos enteros\n"
                 "🥤 Bebida grande\n"
