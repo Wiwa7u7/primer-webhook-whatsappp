@@ -17,7 +17,7 @@ TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 
 TWILIO_WHATSAPP_NUMBER = "whatsapp:+14155238886"  # Sandbox
-OPERADOR_NUMBER = "whatsapp:+584243761325"       # Tu número verificado
+OPERADOR_NUMBER = "whatsapp:+584243761325"       # Operador humano
 
 
 # =========================
@@ -69,7 +69,7 @@ def save_order(phone, order_text):
 # =========================
 # Notify operator
 # =========================
-def notify_operator(cliente_phone, pedido):
+def notify_operator(cliente_phone,cliente_nombre, pedido):
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
     vzla_tz = pytz.timezone("America/Caracas")
@@ -77,6 +77,7 @@ def notify_operator(cliente_phone, pedido):
 
     mensaje = (
         "📢 *Nuevo pedido recibido*\n\n"
+        f"👤 Cliente: {cliente_nombre}\n"
         f"📞 Cliente: {cliente_phone}\n"
         f"📝 Pedido: {pedido}\n"
         f"⏰ Hora: {hora}\n\n"
@@ -97,11 +98,14 @@ def notify_operator(cliente_phone, pedido):
 def whatsapp():
     incoming = request.values.get("Body", "").strip().lower()
     phone = request.values.get("From")
+    cliente_nombre = request.values.get("ProfileName", "Cliente")
 
     resp = MessagingResponse()
     msg = resp.message()
 
-    # comandos globales
+    # -------------------------
+    # Comandos globales
+    # -------------------------
     if incoming == "menu":
         set_state(phone, "menu")
 
@@ -111,35 +115,43 @@ def whatsapp():
     # MENU PRINCIPAL
     # =========================
     if state == "menu":
+
         if incoming in ("hola", "menu", ""):
             msg.body(
-                "👋 Hola, soy el asistente de *Pollos El Buen Sabor* 🍗\n\n"
+                "👋 *Bienvenido a Pollos El Buen Sabor* 🍗\n\n"
+                "Selecciona una opción:\n\n"
                 "1️⃣ Ver precios\n"
                 "2️⃣ Horarios y ubicación\n"
                 "3️⃣ Hacer un pedido\n"
                 "4️⃣ Ver combos\n\n"
-                "Responde con el número de la opción."
+                "✍️ Responde con el número de la opción."
             )
 
         elif incoming == "1":
             msg.body(
-                "🍗 *Precios*\n\n"
+                "🍗 *Nuestros precios*\n\n"
                 "• Pollo entero: $10\n"
                 "• Medio pollo: $6\n\n"
-                "Escribe *menu* para volver."
+                "🔙 Escribe *menu* para volver."
             )
 
         elif incoming == "2":
             msg.body(
                 "📍 *Horario y ubicación*\n\n"
-                "🕛 Todos los días de 12pm a 10pm\n"
+                "🕛 Todos los días de 12:00 pm a 10:00 pm\n"
                 "📌 Centro de la ciudad\n\n"
-                "Escribe *menu* para volver."
+                "🔙 Escribe *menu* para volver."
             )
 
         elif incoming == "3":
             set_state(phone, "ordering")
-            msg.body("✍️ Escribe tu pedido (ej: 2 pollos enteros)")
+            msg.body(
+                "✍️ *Escribe tu pedido*\n\n"
+                "Ejemplo:\n"
+                "👉 2 pollos enteros\n"
+                "👉 1 pollo + 1 bebida\n\n"
+                "🔙 Puedes escribir *menu* para volver al menú."
+            )
 
         elif incoming == "4":
             msg.body(
@@ -147,7 +159,8 @@ def whatsapp():
                 "🍗 2 pollos enteros\n"
                 "🥤 Bebida grande\n"
                 "💲 *Precio: $18*\n\n"
-                "Escribe *menu* para volver o *3* para hacer un pedido."
+                "➡️ Escribe *3* para ordenar\n"
+                "🔙 O escribe *menu* para volver."
             )
             msg.media(
                 "https://i.blogs.es/abc649/mejores-recetas-pollo/650_1200.jpg"
@@ -155,20 +168,41 @@ def whatsapp():
             set_state(phone, "menu")
 
         else:
-            msg.body("❌ Opción no válida. Responde 1, 2, 3 o 4.")
+            msg.body(
+                "❌ Opción no válida.\n\n"
+                "Responde con:\n"
+                "1️⃣ 2️⃣ 3️⃣ o 4️⃣\n\n"
+                "O escribe *menu* para ver las opciones."
+            )
 
     # =========================
     # TOMANDO PEDIDO
     # =========================
     elif state == "ordering":
-        save_order(phone, incoming)
-        notify_operator(phone, incoming)
+
+        pedido = incoming.strip()
+
+        # protección mínima contra mensajes basura
+        if len(pedido) < 4:
+            msg.body(
+                "⚠️ No pude entender el pedido.\n\n"
+                "✍️ Escríbelo con más detalle.\n"
+                "Ej: *2 pollos enteros*\n\n"
+                "🔙 O escribe *menu* para volver."
+            )
+            return str(resp)
+
+        save_order(phone, pedido)
+        notify_operator(phone,cliente_nombre, pedido)
 
         msg.body(
-            f"✅ Pedido recibido: *{incoming}*\n\n"
-            "Gracias 🙌\n"
-            "Escribe *menu* para volver."
+            "✅ *Pedido recibido correctamente*\n\n"
+            f"📝 *Pedido:* {pedido}\n\n"
+            "📞 Un operador se pondrá en contacto contigo.\n\n"
+            "🙏 Gracias por preferirnos\n"
+            "🔙 Escribe *menu* para volver."
         )
+
         set_state(phone, "menu")
 
     return str(resp)
