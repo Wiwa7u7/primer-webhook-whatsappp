@@ -27,6 +27,41 @@ def get_conn():
     return psycopg.connect(DATABASE_URL)
 
 
+def ensure_customers_table():
+    """
+    Crea la tabla customers SOLO si no existe.
+    Esto evita depender del dashboard.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS customers (
+                    phone TEXT PRIMARY KEY,
+                    name TEXT
+                )
+            """)
+        conn.commit()
+
+
+def upsert_customer(phone, name):
+    """
+    Guarda el cliente si no existe.
+    Si ya existe, no lo toca.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO customers (phone, name)
+                VALUES (%s, %s)
+                ON CONFLICT (phone)
+                DO NOTHING
+                """,
+                (phone, name)
+            )
+        conn.commit()
+
+
 def get_state(phone):
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -66,22 +101,6 @@ def save_order(phone, order_text):
         conn.commit()
 
 
-# 👉 NUEVO: guardar cliente si no existe
-def upsert_customer(phone, name):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO customers (phone, name)
-                VALUES (%s, %s)
-                ON CONFLICT (phone)
-                DO NOTHING
-                """,
-                (phone, name)
-            )
-        conn.commit()
-
-
 # =========================
 # Notify operator
 # =========================
@@ -94,7 +113,7 @@ def notify_operator(cliente_phone, cliente_nombre, pedido):
     mensaje = (
         "📢 *Nuevo pedido recibido*\n\n"
         f"👤 Cliente: {cliente_nombre}\n"
-        f"📞 Cliente: {cliente_phone}\n"
+        f"📞 Teléfono: {cliente_phone}\n"
         f"📝 Pedido: {pedido}\n"
         f"⏰ Hora: {hora}\n\n"
         "👉 Contactar al cliente."
@@ -112,11 +131,14 @@ def notify_operator(cliente_phone, cliente_nombre, pedido):
 # =========================
 @app.route("/webhook", methods=["POST"])
 def whatsapp():
+    # Asegura la tabla SIEMPRE
+    ensure_customers_table()
+
     incoming = request.values.get("Body", "").strip().lower()
     phone = request.values.get("From")
     cliente_nombre = request.values.get("ProfileName", "Cliente")
 
-    # 👉 Guardar cliente (si ya existe, no hace nada)
+    # Guardar cliente (si ya existe, no pasa nada)
     upsert_customer(phone, cliente_nombre)
 
     resp = MessagingResponse()
@@ -169,7 +191,7 @@ def whatsapp():
                 "Ejemplo:\n"
                 "👉 2 pollos enteros\n"
                 "👉 1 pollo + 1 bebida\n\n"
-                "🔙 Puedes escribir *menu* para volver al menú."
+                "🔙 Puedes escribir *menu* para volver."
             )
 
         elif incoming == "4":
