@@ -17,7 +17,7 @@ COMBO_IMAGE = "https://www.freepik.es/fotos-vectores-gratis/dibujos-animados-pol
 # DB CONNECTION
 # ========================
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    return psycopg.connect(DATABASE_URL, sslmode="require")
 
 # ========================
 # HELPERS
