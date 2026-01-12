@@ -66,10 +66,26 @@ def save_order(phone, order_text):
         conn.commit()
 
 
+# 👉 NUEVO: guardar cliente si no existe
+def upsert_customer(phone, name):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO customers (phone, name)
+                VALUES (%s, %s)
+                ON CONFLICT (phone)
+                DO NOTHING
+                """,
+                (phone, name)
+            )
+        conn.commit()
+
+
 # =========================
 # Notify operator
 # =========================
-def notify_operator(cliente_phone,cliente_nombre, pedido):
+def notify_operator(cliente_phone, cliente_nombre, pedido):
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
     vzla_tz = pytz.timezone("America/Caracas")
@@ -99,6 +115,9 @@ def whatsapp():
     incoming = request.values.get("Body", "").strip().lower()
     phone = request.values.get("From")
     cliente_nombre = request.values.get("ProfileName", "Cliente")
+
+    # 👉 Guardar cliente (si ya existe, no hace nada)
+    upsert_customer(phone, cliente_nombre)
 
     resp = MessagingResponse()
     msg = resp.message()
@@ -182,7 +201,6 @@ def whatsapp():
 
         pedido = incoming.strip()
 
-        # protección mínima contra mensajes basura
         if len(pedido) < 4:
             msg.body(
                 "⚠️ No pude entender el pedido.\n\n"
@@ -193,7 +211,7 @@ def whatsapp():
             return str(resp)
 
         save_order(phone, pedido)
-        notify_operator(phone,cliente_nombre, pedido)
+        notify_operator(phone, cliente_nombre, pedido)
 
         msg.body(
             "✅ *Pedido recibido correctamente*\n\n"
