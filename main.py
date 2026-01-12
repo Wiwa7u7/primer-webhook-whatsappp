@@ -11,7 +11,7 @@ app = Flask(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Imagen placeholder (puedes cambiarla luego)
-COMBO_IMAGE = "https://via.placeholder.com/600x400.png?text=Combo+Pollo+El+Buen+Sabor"
+COMBO_IMAGE = "https://www.freepik.es/fotos-vectores-gratis/dibujos-animados-pollo"
 
 # ========================
 # DB CONNECTION
