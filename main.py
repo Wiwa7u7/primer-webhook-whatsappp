@@ -2,10 +2,22 @@ import os
 import psycopg
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
+from twilio.rest import Client
+from datetime import datetime
+import pytz
 
 app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# =========================
+# Twilio config
+# =========================
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+
+TWILIO_WHATSAPP_NUMBER = "whatsapp:+14155238886"  # Sandbox
+OPERADOR_NUMBER = "whatsapp:+584243761325"       # Tu número verificado
 
 
 # =========================
@@ -52,6 +64,30 @@ def save_order(phone, order_text):
                 (phone, order_text)
             )
         conn.commit()
+
+
+# =========================
+# Notify operator
+# =========================
+def notify_operator(cliente_phone, pedido):
+    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+    vzla_tz = pytz.timezone("America/Caracas")
+    hora = datetime.now(vzla_tz).strftime("%d/%m/%Y %H:%M")
+
+    mensaje = (
+        "📢 *Nuevo pedido recibido*\n\n"
+        f"📞 Cliente: {cliente_phone}\n"
+        f"📝 Pedido: {pedido}\n"
+        f"⏰ Hora: {hora}\n\n"
+        "👉 Contactar al cliente."
+    )
+
+    client.messages.create(
+        from_=TWILIO_WHATSAPP_NUMBER,
+        to=OPERADOR_NUMBER,
+        body=mensaje
+    )
 
 
 # =========================
@@ -113,7 +149,6 @@ def whatsapp():
                 "💲 *Precio: $18*\n\n"
                 "Escribe *menu* para volver o *3* para hacer un pedido."
             )
-            # imagen REAL que sí funciona en WhatsApp
             msg.media(
                 "https://i.blogs.es/abc649/mejores-recetas-pollo/650_1200.jpg"
             )
@@ -127,6 +162,8 @@ def whatsapp():
     # =========================
     elif state == "ordering":
         save_order(phone, incoming)
+        notify_operator(phone, incoming)
+
         msg.body(
             f"✅ Pedido recibido: *{incoming}*\n\n"
             "Gracias 🙌\n"
