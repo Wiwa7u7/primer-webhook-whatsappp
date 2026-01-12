@@ -1,5 +1,4 @@
 fastapi
-uvicorn
 python-multipart
 flask==3.0.3
 twilio==9.2.3
