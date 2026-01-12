@@ -52,7 +52,6 @@ def set_state(phone, state):
                 VALUES (%s, %s)
                 ON CONFLICT (phone)
                 DO UPDATE SET state = EXCLUDED.state,
-                              updated_at = CURRENT_TIMESTAMP
             """, (phone, state))
         conn.commit()
 
