@@ -1,6 +1,6 @@
 from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
-import psycopg2
+import psycopg
 import os
 
 app = Flask(__name__)
