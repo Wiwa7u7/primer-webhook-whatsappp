@@ -47,12 +47,22 @@ def get_state(phone):
 def set_state(phone, state):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO sessions (phone, state)
-                VALUES (%s, %s)
-                ON CONFLICT (phone)
-                DO UPDATE SET state = EXCLUDED.state,
-            """, (phone, state))
+
+            # 1️⃣ Intentar actualizar
+            cur.execute(
+                "UPDATE sessions SET state = %s WHERE phone = %s",
+                (state, phone)
+            )
+
+            # 2️⃣ Si no existe, insertar
+            if cur.rowcount == 0:
+                cur.execute(
+                    "INSERT INTO sessions (phone, state) VALUES (%s, %s)",
+                    (phone, state)
+                )
+
+        conn.commit()
+
         conn.commit()
 
 def save_order(phone, order_text):
