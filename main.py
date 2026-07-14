@@ -1,248 +1,246 @@
 import os
-import psycopg
+import re
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-from twilio.rest import Client
-from datetime import datetime
-import pytz
+from google import genai
 
 app = Flask(__name__)
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
 # =========================
-# Twilio config
+# Configuración Gemini
 # =========================
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
-TWILIO_WHATSAPP_NUMBER = "whatsapp:+14155238886"  # Sandbox
-OPERADOR_NUMBER = "whatsapp:+584243761325"       # Operador humano
+gemini_client = None
 
-
-# =========================
-# DB helpers
-# =========================
-def get_conn():
-    return psycopg.connect(DATABASE_URL)
-
-
-def ensure_customers_table():
-    """
-    Crea la tabla customers SOLO si no existe.
-    Esto evita depender del dashboard.
-    """
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS customers (
-                    phone TEXT PRIMARY KEY,
-                    name TEXT
-                )
-            """)
-        conn.commit()
-
-
-def upsert_customer(phone, name):
-    """
-    Guarda el cliente si no existe.
-    Si ya existe, no lo toca.
-    """
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO customers (phone, name)
-                VALUES (%s, %s)
-                ON CONFLICT (phone)
-                DO NOTHING
-                """,
-                (phone, name)
-            )
-        conn.commit()
-
-
-def get_state(phone):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT state FROM sessions WHERE phone = %s",
-                (phone,)
-            )
-            row = cur.fetchone()
-            return row[0] if row else "menu"
-
-
-def set_state(phone, state):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO sessions (phone, state)
-                VALUES (%s, %s)
-                ON CONFLICT (phone)
-                DO UPDATE SET state = EXCLUDED.state
-                """,
-                (phone, state)
-            )
-        conn.commit()
-
-
-def save_order(phone, order_text):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO orders (phone, order_text)
-                VALUES (%s, %s)
-                """,
-                (phone, order_text)
-            )
-        conn.commit()
+if GEMINI_API_KEY:
+    try:
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        print("Error inicializando Gemini:", e)
+        gemini_client = None
 
 
 # =========================
-# Notify operator
+# Ruta principal
 # =========================
-def notify_operator(cliente_phone, cliente_nombre, pedido):
-    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+@app.route("/", methods=["GET"])
+def home():
+    return "VerificaIA está funcionando correctamente."
 
-    vzla_tz = pytz.timezone("America/Caracas")
-    hora = datetime.now(vzla_tz).strftime("%d/%m/%Y %H:%M")
 
-    mensaje = (
-        "📢 *Nuevo pedido recibido*\n\n"
-        f"👤 Cliente: {cliente_nombre}\n"
-        f"📞 Teléfono: {cliente_phone}\n"
-        f"📝 Pedido: {pedido}\n"
-        f"⏰ Hora: {hora}\n\n"
-        "👉 Contactar al cliente."
-    )
-
-    client.messages.create(
-        from_=TWILIO_WHATSAPP_NUMBER,
-        to=OPERADOR_NUMBER,
-        body=mensaje
+# =========================
+# Funciones del bot
+# =========================
+def welcome_message():
+    return (
+        "🤖 *Bienvenido a VerificaIA*\n\n"
+        "Envíame una noticia, cadena, titular, enlace o fragmento de texto "
+        "y te daré una orientación preliminar sobre su confiabilidad.\n\n"
+        "También puedes escribir:\n"
+        "• ayuda\n"
+        "• ejemplo\n\n"
+        "Nota: Este sistema no determina verdades absolutas. Solo ofrece una orientación inicial."
     )
 
 
-# =========================
-# WhatsApp webhook
-# =========================
-@app.route("/webhook", methods=["POST"])
-def whatsapp():
-    # Asegura la tabla SIEMPRE
-    ensure_customers_table()
+def example_message():
+    return (
+        "📝 *Ejemplo de uso:*\n\n"
+        "Copia y envía una noticia, cadena o mensaje como este:\n\n"
+        "\"Urgente: el gobierno anunció un nuevo bono y debes registrarte en este enlace antes de medianoche. Compártelo con todos tus contactos.\"\n\n"
+        "VerificaIA analizará señales de alerta, nivel orientativo de confiabilidad y recomendaciones."
+    )
 
-    incoming = request.values.get("Body", "").strip().lower()
-    phone = request.values.get("From")
-    cliente_nombre = request.values.get("ProfileName", "Cliente")
 
-    # Guardar cliente (si ya existe, no pasa nada)
-    upsert_customer(phone, cliente_nombre)
+def analyze_with_rules(text):
+    text_lower = text.lower()
 
-    resp = MessagingResponse()
-    msg = resp.message()
+    warning_signals = []
 
-    # -------------------------
-    # Comandos globales
-    # -------------------------
-    if incoming == "menu":
-        set_state(phone, "menu")
+    suspicious_words = [
+        "urgente", "comparte", "reenviar", "reenvía", "difunde",
+        "última hora", "no lo dicen los medios", "100% confirmado",
+        "secreto", "alerta", "cura milagrosa", "bono", "regístrate",
+        "antes de medianoche", "hazlo ya", "pásalo", "pásalo a todos"
+    ]
 
-    state = get_state(phone)
+    for word in suspicious_words:
+        if word in text_lower:
+            warning_signals.append(f"Uso de expresión posiblemente alarmista o persuasiva: “{word}”.")
 
-    # =========================
-    # MENU PRINCIPAL
-    # =========================
-    if state == "menu":
+    has_link = bool(re.search(r"https?://|www\.", text_lower))
+    has_source = any(source in text_lower for source in [
+        "bbc", "cnn", "reuters", "ap", "efe", "el país", "ministerio",
+        "gobierno", "who", "oms", "onu", "unesco", "observatorio"
+    ])
 
-        if incoming in ("hola", "menu", ""):
-            msg.body(
-                "👋 *Bienvenido a Pollos El Buen Sabor* 🍗\n\n"
-                "Selecciona una opción:\n\n"
-                "1️⃣ Ver precios\n"
-                "2️⃣ Horarios y ubicación\n"
-                "3️⃣ Hacer un pedido\n"
-                "4️⃣ Ver combos\n\n"
-                "✍️ Responde con el número de la opción."
-            )
+    if has_link:
+        warning_signals.append("El mensaje contiene un enlace, por lo que conviene revisar si pertenece a una fuente confiable.")
 
-        elif incoming == "1":
-            msg.body(
-                "🍗 *Nuestros precios*\n\n"
-                "• Pollo entero: $10\n"
-                "• Medio pollo: $6\n\n"
-                "🔙 Escribe *menu* para volver."
-            )
+    if not has_source:
+        warning_signals.append("No se identifica claramente una fuente verificable dentro del mensaje.")
 
-        elif incoming == "2":
-            msg.body(
-                "📍 *Horario y ubicación*\n\n"
-                "🕛 Todos los días de 12:00 pm a 10:00 pm\n"
-                "📌 Centro de la ciudad\n\n"
-                "🔙 Escribe *menu* para volver."
-            )
+    if len(text.split()) < 12:
+        warning_signals.append("El texto es muy breve, por lo que no hay suficiente contexto para evaluarlo con seguridad.")
 
-        elif incoming == "3":
-            set_state(phone, "ordering")
-            msg.body(
-                "✍️ *Escribe tu pedido*\n\n"
-                "Ejemplo:\n"
-                "👉 2 pollos enteros\n"
-                "👉 1 pollo + 1 bebida\n\n"
-                "🔙 Puedes escribir *menu* para volver."
-            )
+    exclamation_count = text.count("!")
+    if exclamation_count >= 2:
+        warning_signals.append("El mensaje utiliza varias exclamaciones, lo cual puede indicar tono emocional o alarmista.")
 
-        elif incoming == "4":
-            msg.body(
-                "🔥 *Combo Familiar*\n\n"
-                "🍗 2 pollos enteros\n"
-                "🥤 Bebida grande\n"
-                "💲 *Precio: $18*\n\n"
-                "➡️ Escribe *3* para ordenar\n"
-                "🔙 O escribe *menu* para volver."
-            )
-            msg.media(
-                "https://i.blogs.es/abc649/mejores-recetas-pollo/650_1200.jpg"
-            )
-            set_state(phone, "menu")
+    uppercase_words = [word for word in text.split() if len(word) > 4 and word.isupper()]
+    if len(uppercase_words) >= 2:
+        warning_signals.append("El mensaje contiene varias palabras en mayúsculas, posible señal de énfasis alarmista.")
 
-        else:
-            msg.body(
-                "❌ Opción no válida.\n\n"
-                "Responde con:\n"
-                "1️⃣ 2️⃣ 3️⃣ o 4️⃣\n\n"
-                "O escribe *menu* para ver las opciones."
-            )
+    score = len(warning_signals)
 
-    # =========================
-    # TOMANDO PEDIDO
-    # =========================
-    elif state == "ordering":
+    if score <= 1:
+        level = "Medio-Alto"
+    elif score <= 3:
+        level = "Medio"
+    else:
+        level = "Bajo"
 
-        pedido = incoming.strip()
+    return level, warning_signals
 
-        if len(pedido) < 4:
-            msg.body(
-                "⚠️ No pude entender el pedido.\n\n"
-                "✍️ Escríbelo con más detalle.\n"
-                "Ej: *2 pollos enteros*\n\n"
-                "🔙 O escribe *menu* para volver."
-            )
-            return str(resp)
 
-        save_order(phone, pedido)
-        notify_operator(phone, cliente_nombre, pedido)
+def fallback_response(text):
+    level, signals = analyze_with_rules(text)
 
-        msg.body(
-            "✅ *Pedido recibido correctamente*\n\n"
-            f"📝 *Pedido:* {pedido}\n\n"
-            "📞 Un operador se pondrá en contacto contigo.\n\n"
-            "🙏 Gracias por preferirnos\n"
-            "🔙 Escribe *menu* para volver."
+    if not signals:
+        signals = [
+            "No se detectaron señales alarmistas evidentes.",
+            "Aun así, se recomienda contrastar la información con fuentes confiables."
+        ]
+
+    signals_text = "\n".join([f"• {signal}" for signal in signals[:4]])
+
+    return (
+        "🤖 *VerificaIA*\n\n"
+        f"*Nivel orientativo de confiabilidad:* {level}\n\n"
+        "*Señales detectadas:*\n"
+        f"{signals_text}\n\n"
+        "*Recomendaciones:*\n"
+        "• Consulta medios reconocidos o fuentes oficiales.\n"
+        "• Verifica la fecha, el autor y el enlace original.\n"
+        "• Evita reenviar la información si no puedes confirmarla.\n\n"
+        "_Nota: Este análisis es orientativo y no sustituye una verificación profesional._"
+    )
+
+
+def analyze_with_gemini(text):
+    if not gemini_client:
+        return fallback_response(text)
+
+    level, rule_signals = analyze_with_rules(text)
+    rule_signals_text = "\n".join([f"- {s}" for s in rule_signals]) if rule_signals else "No se detectaron señales claras por reglas."
+
+    prompt = f"""
+Eres VerificaIA, un asistente académico para orientación preliminar sobre noticias falsas en medios digitales.
+
+Analiza el siguiente contenido enviado por un usuario de WhatsApp.
+
+IMPORTANTE:
+- No afirmes que algo es 100% verdadero o 100% falso.
+- No inventes fuentes.
+- No digas que verificaste en internet.
+- La respuesta debe ser breve, clara y útil para WhatsApp.
+- Usa español.
+- Mantén un tono académico pero sencillo.
+- Indica que el análisis es orientativo.
+
+Contenido enviado:
+\"\"\"{text}\"\"\"
+
+Señales detectadas por reglas básicas:
+{rule_signals_text}
+
+Responde exactamente con este formato:
+
+🤖 *VerificaIA*
+
+*Nivel orientativo de confiabilidad:* Bajo / Medio / Medio-Alto
+
+*Señales de alerta detectadas:*
+• Señal 1
+• Señal 2
+• Señal 3
+
+*Recomendaciones:*
+• Recomendación 1
+• Recomendación 2
+• Recomendación 3
+
+_Nota: Este análisis es orientativo y no sustituye una verificación profesional._
+"""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt
         )
 
-        set_state(phone, "menu")
+        ai_text = response.text.strip()
 
-    return str(resp)
+        if not ai_text:
+            return fallback_response(text)
+
+        return ai_text[:1500]
+
+    except Exception as e:
+        print("Error con Gemini:", e)
+        return fallback_response(text)
+
+
+# =========================
+# Webhook de Twilio
+# =========================
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    incoming_msg = request.values.get("Body", "").strip()
+    sender = request.values.get("From", "")
+
+    print(f"Mensaje recibido de {sender}: {incoming_msg}")
+
+    twilio_response = MessagingResponse()
+    msg = twilio_response.message()
+
+    if not incoming_msg:
+        msg.body("No recibí ningún texto. Envíame una noticia, titular, enlace o cadena para analizar.")
+        return str(twilio_response)
+
+    normalized = incoming_msg.lower().strip()
+
+    if normalized in ["hola", "buenas", "menu", "menú", "inicio", "start"]:
+        msg.body(welcome_message())
+        return str(twilio_response)
+
+    if normalized in ["ayuda", "help"]:
+        msg.body(welcome_message())
+        return str(twilio_response)
+
+    if normalized in ["ejemplo", "example"]:
+        msg.body(example_message())
+        return str(twilio_response)
+
+    if len(incoming_msg) < 15:
+        msg.body(
+            "🤖 *VerificaIA*\n\n"
+            "El mensaje es muy corto para analizarlo.\n\n"
+            "Envíame una noticia, cadena, enlace, titular o fragmento más completo."
+        )
+        return str(twilio_response)
+
+    analysis = analyze_with_gemini(incoming_msg)
+    msg.body(analysis)
+
+    return str(twilio_response)
+
+
+# =========================
+# Ejecutar app
+# =========================
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
