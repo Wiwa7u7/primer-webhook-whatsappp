@@ -243,46 +243,58 @@ def format_kb_context(kb_result):
 def fallback_response(text, kb_result=None):
     level, signals = analyze_with_rules(text)
 
-    kb_text = ""
-
     if kb_result:
         item = kb_result["item"]
-        kb_text = (
-            f"*Coincidencia en base local:*\n"
-            f"• Se encontró un registro relacionado.\n"
-            f"• Título: {item.get('titulo', 'N/A')}\n"
-            f"• Estado registrado: {item.get('estado', 'N/A')}\n"
-            f"• Fuente: {item.get('fuente', 'N/A')}\n\n"
-        )
-    else:
-        kb_text = (
-            "*Coincidencia en base local:*\n"
-            "• No se encontró coincidencia suficiente.\n"
-            "• Esto no significa que la noticia sea falsa.\n\n"
+        estado = item.get("estado", "N/A")
+        titulo = item.get("titulo", "N/A")
+        contenido = item.get("contenido", "No disponible")
+        fuente = item.get("fuente", "N/A")
+        fecha = item.get("fecha", "N/A")
+        explicacion = item.get("explicacion", "No disponible")
+        recomendacion = item.get("recomendacion", "Contrastar con fuentes oficiales o medios reconocidos.")
+
+        # Si hay coincidencia en base local, responde primero con la información encontrada
+        return (
+            "🤖 *VerificaIA*\n\n"
+            "*Respuesta basada en la base local del prototipo:*\n"
+            f"{contenido}\n\n"
+            "*Registro consultado:*\n"
+            f"• Título: {titulo}\n"
+            f"• Estado registrado: {estado}\n"
+            f"• Fuente: {fuente}\n"
+            f"• Fecha: {fecha}\n\n"
+            "*Análisis preliminar:*\n"
+            f"{explicacion}\n\n"
+            "*Recomendación:*\n"
+            f"{recomendacion}\n\n"
+            "_Nota: Este análisis es orientativo y depende de la información almacenada en la base local. "
+            "No sustituye una verificación profesional._"
         )
 
+    # Si no hay coincidencia, usar análisis por reglas
     if not signals:
         signals = [
             "No se detectaron señales alarmistas evidentes.",
-            "Aun así, se recomienda contrastar la información con fuentes confiables."
+            "Aun así, no se encontró información suficiente en la base local para verificar el contenido."
         ]
 
     signals_text = "\n".join([f"• {signal}" for signal in signals[:4]])
 
     return (
         "🤖 *VerificaIA*\n\n"
-        f"*Nivel orientativo de confiabilidad:* {level}\n\n"
-        f"{kb_text}"
-        "*Indicadores detectados:*\n"
+        "*Resultado del análisis preliminar:*\n"
+        "No verificable con la base local del prototipo.\n\n"
+        "*Coincidencia en base local:*\n"
+        "• No se encontró coincidencia suficiente.\n"
+        "• Esto no significa que la noticia sea falsa.\n\n"
+        "*Indicadores evaluados:*\n"
         f"{signals_text}\n\n"
         "*Recomendaciones:*\n"
-        "• Consulta medios reconocidos o fuentes oficiales.\n"
-        "• Verifica la fecha, el autor y el enlace original.\n"
+        "• Consulta fuentes oficiales o medios reconocidos.\n"
+        "• Verifica fecha, autor, enlace y contexto.\n"
         "• Evita reenviar la información si no puedes confirmarla.\n\n"
         "_Nota: Este análisis es orientativo y no sustituye una verificación profesional._"
     )
-
-
 # =========================
 # Análisis con Gemini
 # =========================
