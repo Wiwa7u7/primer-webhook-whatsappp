@@ -296,6 +296,15 @@
     "alerta",
     "venezuela"
   ],
+  "palabras_clave_fuertes": [
+  "cerraran todos los bancos",
+  "cerrarán todos los bancos",
+  "retira tu dinero",
+  "avisa a tu familia",
+  "cierre nacional de bancos",
+  "mañana cerraran todos los bancos",
+  "mañana cerrarán todos los bancos"
+],
   "explicacion": "El mensaje no presenta fuente verificable, genera alarma económica y solicita una acción inmediata.",
   "recomendacion": "Verificar comunicados oficiales de entidades bancarias, reguladores financieros o medios económicos reconocidos antes de actuar."
 },

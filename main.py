@@ -253,28 +253,24 @@ def search_knowledge_base(user_text):
     # - score alto, o
     # - palabras clave fuertes, o
     # - varias palabras clave específicas.
-    if score >= 0.42 or best_strong_hits >= 1 or best_keyword_hits >= 3:
+    # Coincidencia fuerte:
+# Solo se acepta si hay palabras clave fuertes,
+# o si hay varias palabras clave específicas y un puntaje alto.
+    if best_strong_hits >= 1 or (score >= 0.50 and best_keyword_hits >= 3):
         return {
-            "status": "strong_match",
-            "score": score,
-            "item": best_item,
-            "reason": best_reason
-        }
-
-    # Coincidencia débil:
-    # Hay tema parecido, pero no suficiente para usarlo como respuesta directa.
-    if score >= 0.25 or best_keyword_hits >= 1:
-        return {
-            "status": "weak_match",
-            "score": score,
-            "item": best_item,
-            "reason": best_reason
-        }
-
-    return {
-        "status": "no_match",
+        "status": "strong_match",
         "score": score,
-        "item": None,
+        "item": best_item,
+        "reason": best_reason
+    }
+
+# Coincidencia débil:
+# Hay tema parecido, pero no suficiente para verificar.
+    if score >= 0.30 and best_keyword_hits >= 2:
+        return {
+        "status": "weak_match",
+        "score": score,
+        "item": best_item,
         "reason": best_reason
     }
 
@@ -529,7 +525,6 @@ def strong_match_response(text, kb_result):
         f"{recomendacion}\n\n"
         "_Nota: Este análisis es orientativo y no sustituye una verificación profesional._"
     )
-
 
 def fallback_response(text, kb_result=None):
     if kb_result:
