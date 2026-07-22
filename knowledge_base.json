@@ -330,6 +330,36 @@
   "recomendacion": "Indicar al usuario que la ausencia de coincidencia no significa falsedad y recomendar consultar fuentes confiables."
 },
 {
+  "id": "VEN-2026-007",
+  "titulo": "Cadena sospechosa sobre alerta de tsunami en Venezuela",
+  "categoria": "emergencia_desinformacion",
+  "estado": "sospechoso",
+  "pais": "Venezuela",
+  "tema": "alerta falsa de tsunami",
+  "contenido_referencia": "Circula una cadena que afirma que un tsunami llegará a las costas venezolanas y pide evacuar de inmediato sin presentar fuente oficial verificable.",
+  "palabras_clave": [
+    "tsunami",
+    "alerta de tsunami",
+    "costas venezolanas",
+    "evacuar",
+    "ola gigante",
+    "protección civil",
+    "urgente",
+    "reenvía",
+    "comparte",
+    "avisa a todos"
+  ],
+  "senales_alerta": [
+    "Uso de lenguaje alarmista",
+    "Llamado urgente a reenviar",
+    "Ausencia de enlace o comunicado oficial",
+    "No menciona fecha, hora ni autoridad verificable",
+    "Puede generar pánico en la población"
+  ],
+  "respuesta_sugerida": "El contenido presenta señales de alerta asociadas a desinformación: lenguaje alarmista, solicitud de reenvío urgente y ausencia de fuentes oficiales verificables. No se recomienda compartir este mensaje sin confirmarlo antes con organismos oficiales de protección civil, autoridades meteorológicas o medios confiables.",
+  "recomendacion": "Consultar fuentes oficiales antes de difundir alertas de emergencia. En situaciones de riesgo, no compartir cadenas anónimas que puedan generar pánico."
+},
+{
   "id": "VEN-2026-014",
   "titulo": "Uso de WhatsApp como canal vulnerable a cadenas no verificadas",
   "contenido": "WhatsApp es un canal frecuente para la circulación de cadenas, rumores y mensajes difíciles de rastrear, por lo que resulta necesario promover prácticas de verificación antes de reenviar información.",
@@ -352,5 +382,6 @@
   ],
   "explicacion": "Este registro permite al prototipo responder consultas generales sobre por qué WhatsApp puede facilitar la circulación de desinformación.",
   "recomendacion": "Verificar fuente, fecha, autor, enlace y contexto antes de reenviar mensajes recibidos por WhatsApp."
+  
 }
 ]
