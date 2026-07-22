@@ -331,33 +331,40 @@
 },
 {
   "id": "VEN-2026-007",
-  "titulo": "Cadena sospechosa sobre alerta de tsunami en Venezuela",
+  "titulo": "Alerta falsa de tsunami en Venezuela",
   "categoria": "emergencia_desinformacion",
   "estado": "sospechoso",
-  "pais": "Venezuela",
-  "tema": "alerta falsa de tsunami",
-  "contenido_referencia": "Circula una cadena que afirma que un tsunami llegará a las costas venezolanas y pide evacuar de inmediato sin presentar fuente oficial verificable.",
+  "tema": "tsunami",
+  "contenido_referencia": "Cadena sospechosa que afirma que un tsunami llegará hoy a las costas de Venezuela y pide evacuar inmediatamente sin presentar fuente oficial.",
   "palabras_clave": [
     "tsunami",
+    "alerta tsunami",
     "alerta de tsunami",
+    "tsunami en venezuela",
+    "costas de venezuela",
     "costas venezolanas",
-    "evacuar",
     "ola gigante",
-    "protección civil",
+    "evacuar",
+    "evacuar inmediatamente",
+    "emergencia",
     "urgente",
-    "reenvía",
+    "reenvia",
+    "reenviar",
     "comparte",
-    "avisa a todos"
+    "avisa a todos",
+    "proteccion civil",
+    "autoridades",
+    "las autoridades no quieren alarmar"
   ],
   "senales_alerta": [
-    "Uso de lenguaje alarmista",
+    "Lenguaje alarmista",
     "Llamado urgente a reenviar",
-    "Ausencia de enlace o comunicado oficial",
-    "No menciona fecha, hora ni autoridad verificable",
+    "Ausencia de fuente oficial",
+    "No menciona comunicado verificable",
     "Puede generar pánico en la población"
   ],
-  "respuesta_sugerida": "El contenido presenta señales de alerta asociadas a desinformación: lenguaje alarmista, solicitud de reenvío urgente y ausencia de fuentes oficiales verificables. No se recomienda compartir este mensaje sin confirmarlo antes con organismos oficiales de protección civil, autoridades meteorológicas o medios confiables.",
-  "recomendacion": "Consultar fuentes oficiales antes de difundir alertas de emergencia. En situaciones de riesgo, no compartir cadenas anónimas que puedan generar pánico."
+  "respuesta_sugerida": "El contenido presenta señales de alerta asociadas a desinformación sobre emergencias: lenguaje alarmista, solicitud de reenvío urgente y ausencia de una fuente oficial verificable. No se recomienda compartir este mensaje sin confirmarlo antes con organismos oficiales de protección civil, autoridades meteorológicas o medios confiables.",
+  "recomendacion": "Consultar fuentes oficiales antes de difundir alertas de emergencia. No compartir cadenas anónimas que puedan generar pánico."
 },
 {
   "id": "VEN-2026-014",
