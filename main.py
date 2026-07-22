@@ -102,7 +102,11 @@ def detect_topic(text):
         "desinformación digital": [
             "whatsapp", "cadena", "reenviar", "rumor", "fake", "falsa",
             "desinformacion"
-        ]
+        ],
+        "emergencia / tsunami": [
+    "tsunami", "maremoto", "alerta de tsunami", "ola gigante",
+    "costas", "evacuar", "evacuacion", "proteccion civil"
+        ],
     }
 
     detected = []
@@ -177,7 +181,7 @@ def search_knowledge_base(user_text):
 
     for item in KNOWLEDGE_BASE:
         title = item.get("titulo", "")
-        content = item.get("contenido", "")
+        content = item.get("contenido", "") or item.get("contenido_referencia", "") or item.get("respuesta_sugerida", "")
         keywords = item.get("palabras_clave", [])
 
         # Permite usar palabras_clave_fuertes en el futuro sin romper el JSON actual.

@@ -334,8 +334,13 @@
   "titulo": "Alerta falsa de tsunami en Venezuela",
   "categoria": "emergencia_desinformacion",
   "estado": "sospechoso",
+  "pais": "Venezuela",
   "tema": "tsunami",
-  "contenido_referencia": "Cadena sospechosa que afirma que un tsunami llegará hoy a las costas de Venezuela y pide evacuar inmediatamente sin presentar fuente oficial.",
+  "fecha": "2026",
+  "fuente": "Base local de VerificaIA",
+  "tipo_fuente": "Registro académico local",
+  "contenido": "Cadena sospechosa que afirma que un tsunami llegará hoy a las costas de Venezuela y pide evacuar inmediatamente sin presentar fuente oficial verificable.",
+  "explicacion": "El contenido coincide con un patrón de desinformación sobre emergencias: utiliza lenguaje alarmista, menciona una supuesta alerta de tsunami, pide evacuar inmediatamente y solicita reenviar el mensaje sin incluir una fuente oficial verificable.",
   "palabras_clave": [
     "tsunami",
     "alerta tsunami",
@@ -356,6 +361,13 @@
     "autoridades",
     "las autoridades no quieren alarmar"
   ],
+  "palabras_clave_fuertes": [
+    "tsunami",
+    "alerta de tsunami",
+    "tsunami en venezuela",
+    "costas de venezuela",
+    "evacuar inmediatamente"
+  ],
   "senales_alerta": [
     "Lenguaje alarmista",
     "Llamado urgente a reenviar",
@@ -363,8 +375,7 @@
     "No menciona comunicado verificable",
     "Puede generar pánico en la población"
   ],
-  "respuesta_sugerida": "El contenido presenta señales de alerta asociadas a desinformación sobre emergencias: lenguaje alarmista, solicitud de reenvío urgente y ausencia de una fuente oficial verificable. No se recomienda compartir este mensaje sin confirmarlo antes con organismos oficiales de protección civil, autoridades meteorológicas o medios confiables.",
-  "recomendacion": "Consultar fuentes oficiales antes de difundir alertas de emergencia. No compartir cadenas anónimas que puedan generar pánico."
+  "recomendacion": "No compartir cadenas anónimas sobre emergencias. Confirmar primero la información con organismos oficiales de protección civil, autoridades meteorológicas o medios confiables."
 },
 {
   "id": "VEN-2026-014",
